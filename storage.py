@@ -16,9 +16,10 @@ def load(filename):
                 record = {
                     "date": parts[0],
                     "exercise": parts[1],
-                    "reps": int(parts[2]),
+                    "target_sets": int(parts[2]),
                     "sets": int(parts[3]),
-                    "note": parts[4] if len(parts) > 4 else ""
+                    "reps": int(parts[4]),
+                    "note": parts[5] if len(parts) > 5 else ""
                 }
                 records.append(record)
             except (IndexError, ValueError):
@@ -33,4 +34,4 @@ def save(filename, records):
         for r in records:
             clean_ex = str(r['exercise']).replace(";", ",")
             clean_note = str(r['note']).replace(";", ",")
-            f.write(f"{r['date']};{clean_ex};{r['reps']};{r['sets']};{clean_note}\n")
+            f.write(f"{r['date']};{clean_ex};{r['target_sets']};{r['sets']};{r['reps']};{clean_note}\n")

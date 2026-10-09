@@ -6,15 +6,13 @@ def find_by_exercise(records, exercise):
 
 
 def total_stats_by_exercise(records):
-    """
-    Повертає підсумки по кожній вправі у вигляді:
-    { "Назва вправи": {"total_sets": X, "total_reps": Y} }
-    """
+    """Обчислює планові та фактичні підходи/повторення."""
     stats = {}
     for r in records:
         ex = r["exercise"]
         if ex not in stats:
-            stats[ex] = {"total_sets": 0, "total_reps": 0}
-        stats[ex]["total_sets"] += r["sets"]
+            stats[ex] = {"target_sets": 0, "actual_sets": 0, "total_reps": 0}
+        stats[ex]["target_sets"] += r["target_sets"]
+        stats[ex]["actual_sets"] += r["sets"]
         stats[ex]["total_reps"] += r["reps"] * r["sets"]
     return stats

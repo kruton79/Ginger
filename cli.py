@@ -1,4 +1,3 @@
-# cli.py
 import sys
 import storage
 import logic
@@ -14,38 +13,42 @@ def main():
     records = storage.load(FILE)
 
     if command == "add":
-        if len(sys.argv) < 6:
-            print("Використання: python cli.py add ДАТА ВПРАВА ПОВТОРИ ПІДХОДИ [КОМЕНТАР]")
+        if len(sys.argv) < 7:
+            print("Використання: python cli.py add ДАТА ВПРАВА ПЛАН_ПІДХОДІВ ФАКТ_ПІДХОДІВ ПОВТОРИ [КОМЕНТАР]")
             return
         
         try:
-            reps = int(sys.argv[4])
+            target_sets = int(sys.argv[4])
             sets = int(sys.argv[5])
+            reps = int(sys.argv[6])
         except ValueError:
-            print("Помилка: повтори та підходи мають бути цілими числами!")
+            print("Помилка: підходи та повтори мають бути цілими числами!")
             return
 
-        if reps <= 0 or sets <= 0:
-            print("Помилка: кількість повторів і підходів має бути більшою за 0!")
+        if target_sets <= 0 or sets < 0 or reps <= 0:
+            print("Помилка: підходи і повтори повинні бути більшими за 0!")
             return
 
-        note = sys.argv[6] if len(sys.argv) > 6 else ""
+        note = sys.argv[7] if len(sys.argv) > 7 else ""
+        
         records.append({
             "date": sys.argv[2],
             "exercise": sys.argv[3],
-            "reps": reps,
+            "target_sets": target_sets,
             "sets": sets,
+            "reps": reps,
             "note": note
         })
         storage.save(FILE, records)
-        print("Запис тренування успішно додано.")
+        print("Запис успішно додано.")
 
     elif command == "list":
         if not records:
             print("Записів немає.")
             return
         for r in records:
-            print(f"{r['date']} | {r['exercise']:<15} | {r['sets']} підх. x {r['reps']} повт. | {r['note']}")
+            status = " [НЕ ПОВНІСТЮ]" if r['sets'] < r['target_sets'] else " [ВИКОНАНО]"
+            print(f"{r['date']} | {r['exercise']:<15} | {r['sets']}/{r['target_sets']} підх. x {r['reps']} повт.{status} | {r['note']}")
 
     elif command == "find":
         if len(sys.argv) < 3:
@@ -56,7 +59,8 @@ def main():
             print("Записів не знайдено.")
             return
         for r in found:
-            print(f"{r['date']} | {r['exercise']:<15} | {r['sets']} підх. x {r['reps']} повт. | {r['note']}")
+            status = " [НЕ ПОВНІСТЮ]" if r['sets'] < r['target_sets'] else " [ВИКОНАНО]"
+            print(f"{r['date']} | {r['exercise']:<15} | {r['sets']}/{r['target_sets']} підх. x {r['reps']} повт.{status} | {r['note']}")
 
     elif command == "report":
         stats = logic.total_stats_by_exercise(records)
@@ -64,7 +68,7 @@ def main():
             print("Немає даних для звіту.")
             return
         for ex, data in stats.items():
-            print(f"{ex:<15}: усього підходів = {data['total_sets']}, загалом повторень = {data['total_reps']}")
+            print(f"{ex:<15}: виконано підходів = {data['actual_sets']}/{data['target_sets']}, загалом повторень = {data['total_reps']}")
 
     else:
         print("Невідома команда:", command)

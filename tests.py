@@ -2,8 +2,8 @@ import logic
 
 def test_find_by_exercise():
     records = [
-        {"date": "2026-10-01", "exercise": "Присідання", "reps": 15, "sets": 3, "note": "Ок"},
-        {"date": "2026-10-02", "exercise": "Відтискання", "reps": 20, "sets": 4, "note": "Важко"}
+        {"date": "2026-10-01", "exercise": "Присідання", "target_sets": 4, "sets": 4, "reps": 15, "note": "Ок"},
+        {"date": "2026-10-02", "exercise": "Відтискання", "target_sets": 4, "sets": 2, "reps": 20, "note": "Важко"}
     ]
     res = logic.find_by_exercise(records, "Присідання")
     assert len(res) == 1
@@ -16,11 +16,12 @@ def test_find_by_exercise():
 
 def test_total_stats_by_exercise():
     records = [
-        {"date": "2026-10-01", "exercise": "Присідання", "reps": 10, "sets": 3, "note": ""},
-        {"date": "2026-10-02", "exercise": "Присідання", "reps": 12, "sets": 2, "note": ""}
+        {"date": "2026-10-01", "exercise": "Присідання", "target_sets": 4, "sets": 3, "reps": 10, "note": ""},
+        {"date": "2026-10-02", "exercise": "Присідання", "target_sets": 4, "sets": 2, "reps": 12, "note": ""}
     ]
     stats = logic.total_stats_by_exercise(records)
-    assert stats["Присідання"]["total_sets"] == 5
+    assert stats["Присідання"]["actual_sets"] == 5
+    assert stats["Присідання"]["target_sets"] == 8
     assert stats["Присідання"]["total_reps"] == 54
     assert logic.total_stats_by_exercise([]) == {}
 
