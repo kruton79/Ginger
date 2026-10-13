@@ -1,37 +1,47 @@
-def load(filename):
-    """Повертає список словників з файла. Пошкоджені рядки пропускає."""
-    records = []
-    try:
-        f = open(filename, "r", encoding="utf-8")
-    except FileNotFoundError:
-        return records
+import sqlite3
 
-    with f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            parts = line.split(";")
-            try:
-                record = {
-                    "date": parts[0],
-                    "exercise": parts[1],
-                    "target_sets": int(parts[2]),
-                    "sets": int(parts[3]),
-                    "reps": int(parts[4]),
-                    "note": parts[5] if len(parts) > 5 else ""
-                }
-                records.append(record)
-            except (IndexError, ValueError):
-                print("Пропущено пошкоджений рядок:", line)
-                continue
-    return records
+DB = "data.db"
 
+def connect():
+    conn = sqlite3.connect(DB)
+    conn.row_factory = sqlite3.Row  # Щоб рядки читалися як словники
+    return conn
 
-def save(filename, records):
-    """Записує всі записи у файл. Очищає спецсимволи ';'."""
-    with open(filename, "w", encoding="utf-8") as f:
-        for r in records:
-            clean_ex = str(r['exercise']).replace(";", ",")
-            clean_note = str(r['note']).replace(";", ",")
-            f.write(f"{r['date']};{clean_ex};{r['target_sets']};{r['sets']};{r['reps']};{clean_note}\n")
+def init():
+    """Створює таблицю, якщо її ще немає."""
+    with connect() as conn:
+        conn.execute("""CREATE TABLE IF NOT EXISTS items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT NOT NULL,
+            exercise TEXT NOT NULL,
+            target_sets INTEGER NOT NULL,
+            sets INTEGER NOT NULL,
+            reps INTEGER NOT NULL,
+            note TEXT)""")
+
+def load(exercise=None):
+    """Повертає список записів. Якщо вказано exercise — фільтрує."""
+    with connect() as conn:
+        if exercise is None:
+            rows = conn.execute("SELECT * FROM items ORDER BY date").fetchall()
+        else:
+            # Використовуємо ? для захисту від SQL-ін'єкцій!
+            rows = conn.execute("SELECT * FROM items WHERE exercise = ? ORDER BY date", (exercise,)).fetchall()
+    
+    result = []
+    for row in rows:
+        result.append(dict(row))
+    return result
+
+def add(date, exercise, target_sets, sets, reps, note=""):
+    """Додає запис і повертає його id."""
+    with connect() as conn:
+        cur = conn.execute("INSERT INTO items (date, exercise, target_sets, sets, reps, note) VALUES (?, ?, ?, ?, ?, ?)",
+                           (date, exercise, target_sets, sets, reps, note))
+        return cur.lastrowid
+
+def delete(item_id):
+    """Видаляє запис. Повертає True, якщо він існував."""
+    with connect() as conn:
+        cur = conn.execute("DELETE FROM items WHERE id = ?", (item_id,))
+        return cur.rowcount > 0
