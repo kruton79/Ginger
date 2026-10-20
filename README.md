@@ -74,3 +74,54 @@ curl -i -X DELETE http://127.0.0.1:5000/items/abc
 ## Формат даних
 База `data.db` (SQLite, створюється поруч з кодом автоматично), таблиця `items`:
 `id, date, exercise, target_sets, sets, reps, note`
+
+
+## Розгортання
+
+Сервіс працює на віртуальній машині Google Cloud (e2-micro, Ubuntu 24.04, регіон us-central1) за адресою https://api.shylko.pp.ua/items. Ланцюжок: nginx (80/443, HTTPS) → gunicorn (127.0.0.1:8000) → Flask.
+
+1. Домен shylko.pp.ua зареєстровано на nic.ua, активовано через Telegram-бота @ppuabot. У DNS додано записи A: `api` і `@` на статичну IP-адресу сервера.
+2. Створено віртуальну машину з дозволеним HTTP/HTTPS трафіком, зарезервовано статичну зовнішню IP-адресу.
+3. Згенеровано ключ (`ssh-keygen -t ed25519`), публічну частину додано в Compute Engine → Metadata → SSH keys у форматі `artem:ssh-ed25519 AAAA...`. Вхід: `ssh artem@ВАШ_IP`.
+4. Встановлення пакетів і фаєрвол:
+```
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y git python3-venv python3-pip nginx ufw sqlite3
+sudo ufw allow OpenSSH
+sudo ufw allow 'Nginx Full'
+sudo ufw enable
+```
+5. Вхід за паролем і під root вимкнено: у `/etc/ssh/sshd_config` задано `PasswordAuthentication no` і `PermitRootLogin no`, потім `sudo systemctl restart ssh`.
+6. Код і залежності (gunicorn уже є в requirements.txt, тому `pip freeze` на сервері не потрібен і файл у репозиторії лишається незмінним):
+```
+cd ~
+git clone https://github.com/kruton79/Ginger.git
+cd Ginger
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+7. Перевірка gunicorn: `gunicorn -w 2 -b 127.0.0.1:8000 app:app`, у другому вікні `curl http://127.0.0.1:8000/items`.
+8. Автозапуск через systemd (файл `deploy/ginger.service`):
+```
+sudo cp deploy/ginger.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now ginger
+sudo systemctl status ginger
+```
+9. nginx (файл `deploy/nginx.conf`):
+```
+sudo cp deploy/nginx.conf /etc/nginx/sites-available/ginger
+sudo ln -s /etc/nginx/sites-available/ginger /etc/nginx/sites-enabled/
+sudo rm /etc/nginx/sites-enabled/default
+sudo nginx -t
+sudo systemctl reload nginx
+```
+10. HTTPS через Let's Encrypt:
+```
+sudo snap install --classic certbot
+sudo ln -s /snap/bin/certbot /usr/local/bin/certbot
+sudo certbot --nginx -d api.shylko.pp.ua
+sudo certbot renew --dry-run
+```
+11. Оновлення коду: `cd ~/Ginger && git pull && sudo systemctl restart ginger`. Логи: `sudo journalctl -u ginger -n 50`.
