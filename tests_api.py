@@ -1,5 +1,3 @@
-"""Перевірки HTTP-маршрутів. Запуск: python tests_api.py (або pytest tests_api.py).
-Використовує окрему тимчасову базу, ваш data.db не чіпає."""
 import json
 import os
 import tempfile
