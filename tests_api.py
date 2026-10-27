@@ -162,7 +162,13 @@ def test_db_path_does_not_depend_on_cwd():
         fresh.DB = os.path.join(tempfile.mkdtemp(), "test.db")
         fresh.init()
 
-
+def test_cors_allows_only_our_frontend():
+    good = client.options("/items", headers={"Origin": "https://shylko.pp.ua", "Access-Control-Request-Method": "POST"})
+    assert good.headers.get("Access-Control-Allow-Origin") == "https://shylko.pp.ua"
+    bad = client.options("/items", headers={"Origin": "https://evil.example", "Access-Control-Request-Method": "POST"})
+    assert "Access-Control-Allow-Origin" not in bad.headers
+    plain = client.get("/items", headers={"Origin": "https://evil.example"})
+    assert "Access-Control-Allow-Origin" not in plain.headers
 if __name__ == "__main__":
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_")]
     failed = 0
