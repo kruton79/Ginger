@@ -4,6 +4,7 @@ import unicodedata
 from datetime import datetime
 
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 from werkzeug.exceptions import HTTPException
 
 import storage
@@ -16,13 +17,15 @@ MAX_BODY_BYTES = 10 * 1024   # весь запит не більше 10 КБ
 MAX_NUMBER = 10_000          # максимум для target_sets, sets, reps
 MAX_EXERCISE_LEN = 100
 MAX_NOTE_LEN = 500
-MAX_ID = 2**63 - 1           # більше SQLite INTEGER не тримає
+MAX_ID = 2**63 - 1           
 
 app = Flask(__name__)
 
-# Вимикаємо кодування кирилиці в \uXXXX, щоб помилки читалися нормально
+
 app.json.ensure_ascii = False
 app.config["MAX_CONTENT_LENGTH"] = MAX_BODY_BYTES
+# Браузер пускає на API лише наш фронтенд (CORS). origins="*" не використовуємо.
+CORS(app, origins=["https://shylko.pp.ua"])
 
 storage.init()
 
