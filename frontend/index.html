@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Трекер тренувань</title>
+  <style>
+    body { font-family: sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; }
+    form { display: grid; gap: .5rem; margin-bottom: 1rem; }
+    input, button { padding: .5rem; font-size: 1rem; }
+    li { display: flex; justify-content: space-between; padding: .3rem 0; border-bottom: 1px solid #ddd; }
+  </style>
+</head>
+<body>
+  <h1>Трекер тренувань</h1>
+  <form id="form">
+    <input id="date" type="date" required>
+    <input id="exercise" placeholder="вправа" required>
+    <input id="target_sets" type="number" min="0" placeholder="план підходів" required>
+    <input id="sets" type="number" min="0" placeholder="факт підходів" required>
+    <input id="reps" type="number" min="0" placeholder="повторів" required>
+    <input id="note" placeholder="нотатка">
+    <button>Додати</button>
+  </form>
+  <p id="status"></p>
+  <ul id="list"></ul>
+
+  <script>
+    const API = "https://api.shylko.pp.ua";
+
+    async function load() {
+      try {
+        const response = await fetch(API + "/items");
+        const items = await response.json();
+        const list = document.getElementById("list");
+        list.replaceChildren();
+        for (const item of items) {
+          const li = document.createElement("li");
+          // textContent виводить дані як звичайний текст, тому <script> у записі не виконається
+          li.textContent = `${item.date}  ${item.exercise}  ${item.sets}/${item.target_sets} підх. x ${item.reps}  ${item.note || ""}`;
+          list.appendChild(li);
+        }
+      } catch (error) {
+        document.getElementById("status").textContent = "не вдалося завантажити список";
+      }
+    }
+
+    document.getElementById("form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const body = {
+        date: document.getElementById("date").value,
+        exercise: document.getElementById("exercise").value,
+        target_sets: parseInt(document.getElementById("target_sets").value, 10),
+        sets: parseInt(document.getElementById("sets").value, 10),
+        reps: parseInt(document.getElementById("reps").value, 10),
+        note: document.getElementById("note").value,
+      };
+      const status = document.getElementById("status");
+      try {
+        const response = await fetch(API + "/items", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const result = await response.json();
+        status.textContent = response.ok ? "додано" : "помилка: " + result.error;
+      } catch (error) {
+        status.textContent = "помилка: сервер недоступний або забагато запитів";
+      }
+      load();
+    });
+
+    load();
+  </script>
+</body>
+</html>
