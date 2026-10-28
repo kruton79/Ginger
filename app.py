@@ -21,7 +21,6 @@ MAX_ID = 2**63 - 1
 
 app = Flask(__name__)
 
-
 app.json.ensure_ascii = False
 app.config["MAX_CONTENT_LENGTH"] = MAX_BODY_BYTES
 # Браузер пускає на API лише наш фронтенд (CORS). origins="*" не використовуємо.
