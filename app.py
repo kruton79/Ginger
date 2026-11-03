@@ -1,14 +1,22 @@
+import hmac
+import os
 import re
 import sqlite3
 import unicodedata
 from datetime import datetime
 
-from flask import Flask, request, jsonify
+from dotenv import load_dotenv
+from flask import Flask, request, jsonify, abort
 from flask_cors import CORS
 from werkzeug.exceptions import HTTPException
 
 import storage
 import logic
+
+# Секрети беремо з файлу .env поруч з app.py (його немає в git) або зі змінних оточення.
+# Змінні, які вже задані в оточенні, load_dotenv не перезаписує.
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
+ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "")
 
 # --- Обмеження на вхідні дані ---
 # Без них один запит на 100 МБ потрапляє в базу, і після цього кожен GET /items
@@ -17,12 +25,16 @@ MAX_BODY_BYTES = 10 * 1024   # весь запит не більше 10 КБ
 MAX_NUMBER = 10_000          # максимум для target_sets, sets, reps
 MAX_EXERCISE_LEN = 100
 MAX_NOTE_LEN = 500
-MAX_ID = 2**63 - 1           
+MAX_ID = 2**63 - 1           # більше SQLite INTEGER не тримає
+MAX_IMPORT_BYTES = 1_000_000  # імпорт з адмінки може бути більшим за звичайний запит
+MAX_IMPORT_ITEMS = 1000       # і не більше стількох записів за раз
 
 app = Flask(__name__)
 
+# Вимикаємо кодування кирилиці в \uXXXX, щоб помилки читалися нормально
 app.json.ensure_ascii = False
 app.config["MAX_CONTENT_LENGTH"] = MAX_BODY_BYTES
+
 # Браузер пускає на API лише наш фронтенд (CORS). origins="*" не використовуємо.
 CORS(app, origins=["https://shylko.pp.ua"])
 
@@ -75,11 +87,52 @@ def parse_date(value):
         raise ValueError("Поле date має бути існуючою датою у форматі РРРР-ММ-ДД")
 
 
+def parse_item(data):
+    """Перевіряє один запис. Повертає (date, exercise, target_sets, sets, reps, note)
+    або кидає ValueError з поясненням. Спільна для POST /items та POST /admin/import."""
+    if not isinstance(data, dict):
+        raise ValueError("Запис має бути JSON-об'єктом")
+    missing = [f for f in ["date", "exercise", "target_sets", "sets", "reps"] if f not in data]
+    if missing:
+        raise ValueError(f"Відсутні обов'язкові поля: {', '.join(missing)}")
+    return (
+        parse_date(data["date"]),
+        clean_text(data["exercise"], "exercise", MAX_EXERCISE_LEN),
+        parse_int(data["target_sets"], "target_sets"),
+        parse_int(data["sets"], "sets"),
+        parse_int(data["reps"], "reps"),
+        clean_text(data.get("note"), "note", MAX_NOTE_LEN, required=False),
+    )
+
+
+def read_json():
+    """Тіло запиту як JSON або None, якщо воно зламане чи надто вкладене."""
+    try:
+        return request.get_json(silent=True)
+    except RecursionError:  # JSON з надмірною вкладеністю [[[[...
+        return None
+
+
+def require_admin():
+    """Адмінка лише з цього комп'ютера (не через Cloudflare) і лише з токеном."""
+    # Cloudflare додає CF-Connecting-IP до кожного запиту, що пройшов через нього, і прибрати
+    # цей заголовок ззовні неможливо. Є заголовок, отже запит з інтернету: адмінки для нього немає.
+    if "CF-Connecting-IP" in request.headers:
+        app.logger.warning("Запит до /admin/ через Cloudflare відхилено: %r", request.path)
+        abort(404)
+    token = request.headers.get("X-Admin-Token", "")
+    # Порожній ADMIN_TOKEN (секрет не налаштовано) не має пускати нікого,
+    # навіть запит без заголовка. Порівняння у постійний час.
+    if not ADMIN_TOKEN or not hmac.compare_digest(token.encode(), ADMIN_TOKEN.encode()):
+        abort(403)
+
+
 # --- Єдиний формат помилок: завжди JSON, ніколи HTML і ніколи traceback ---
 
 @app.errorhandler(HTTPException)
 def handle_http_error(e):
     messages = {
+        403: "Доступ заборонено",
         404: "Ресурс не знайдено",
         405: "Цей метод не підтримується для цього маршруту",
         413: f"Запит завеликий (максимум {MAX_BODY_BYTES} байт)",
@@ -119,38 +172,27 @@ def list_items():
 
 @app.post("/items")
 def add_item():
-    try:
-        data = request.get_json(silent=True)
-    except RecursionError:  # JSON з надмірною вкладеністю [[[[...
-        data = None
-
-    # 1. Перевірка цілісності JSON (якщо PowerShell знову поламає лапки)
+    data = read_json()
     if not isinstance(data, dict):
         return error("Отримано невалідний JSON або дані відсутні", 400)
-
-    # 2. Перевірка наявності всіх обов'язкових ключів
-    required_fields = ["date", "exercise", "target_sets", "sets", "reps"]
-    missing = [f for f in required_fields if f not in data]
-    if missing:
-        return error(f"Відсутні обов'язкові поля: {', '.join(missing)}", 400)
-
-    # 3. Перевірка типів, діапазонів і довжин усіх полів
     try:
-        date = parse_date(data["date"])
-        exercise = clean_text(data["exercise"], "exercise", MAX_EXERCISE_LEN)
-        target_sets = parse_int(data["target_sets"], "target_sets")
-        sets = parse_int(data["sets"], "sets")
-        reps = parse_int(data["reps"], "reps")
-        note = clean_text(data.get("note"), "note", MAX_NOTE_LEN, required=False)
+        values = parse_item(data)
     except ValueError as e:
         return error(str(e), 400)
-
-    new_id = storage.add(date, exercise, target_sets, sets, reps, note)
+    new_id = storage.add(*values)
     return jsonify({"id": new_id, "message": "Запис успішно додано"}), 201
 
 
-@app.delete("/items/<item_id>")
-def delete_item(item_id):
+@app.get("/report")
+def report():
+    return jsonify(logic.total_stats_by_exercise(storage.load()))
+
+
+# --- Адмінка: з інтернету недоступна (правило в deploy/cloudflared.yml), лише з токеном ---
+
+@app.delete("/admin/items/<item_id>")
+def admin_delete_item(item_id):
+    require_admin()
     # Не <int:item_id>: тоді "abc" і "-1" давали б HTML-сторінку 404 замість JSON
     if not (item_id.isascii() and item_id.isdigit()):
         return error("ID має бути додатним цілим числом", 400)
@@ -164,9 +206,32 @@ def delete_item(item_id):
     return error(f"Запис з ID {number} не знайдено", 404)
 
 
-@app.get("/report")
-def report():
-    return jsonify(logic.total_stats_by_exercise(storage.load()))
+@app.get("/admin/export")
+def admin_export():
+    require_admin()
+    return jsonify(storage.load())
+
+
+@app.post("/admin/import")
+def admin_import():
+    require_admin()
+    try:
+        request.max_content_length = MAX_IMPORT_BYTES  # Flask 3.1+: ліміт лише для цього запиту
+    except AttributeError:
+        pass  # старіший Flask: лишається загальний ліміт
+    data = read_json()
+    if not isinstance(data, list) or not data:
+        return error("Очікується непорожній JSON-список записів", 400)
+    if len(data) > MAX_IMPORT_ITEMS:
+        return error(f"Забагато записів за раз (максимум {MAX_IMPORT_ITEMS})", 400)
+    rows = []
+    for number, item in enumerate(data, start=1):
+        try:
+            rows.append(parse_item(item))
+        except ValueError as e:
+            return error(f"Запис {number}: {e}", 400)
+    count = storage.add_many(rows)  # одна транзакція: або всі записи, або жоден
+    return jsonify({"imported": count}), 201
 
 
 if __name__ == "__main__":
