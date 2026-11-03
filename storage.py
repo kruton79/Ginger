@@ -55,6 +55,12 @@ def add(date, exercise, target_sets, sets, reps, note=""):
                            (date, exercise, target_sets, sets, reps, note))
         return cur.lastrowid
 
+def add_many(rows):
+    """Додає кілька записів однією транзакцією: або всі, або жоден. Повертає їх кількість."""
+    with db() as conn:
+        conn.executemany("INSERT INTO items (date, exercise, target_sets, sets, reps, note) VALUES (?, ?, ?, ?, ?, ?)", rows)
+    return len(rows)
+
 def delete(item_id):
     """Видаляє запис. Повертає True, якщо він існував."""
     with db() as conn:
