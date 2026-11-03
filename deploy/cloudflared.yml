@@ -3,5 +3,8 @@ credentials-file: C:\Users\Babijon\.cloudflared\25faa8ad-f463-42a5-83d1-34291c58
 
 ingress:
   - hostname: api.shylko.pp.ua
+    path: ^/admin(/|$)
+    service: http_status:404
+  - hostname: api.shylko.pp.ua
     service: http://127.0.0.1:8000
   - service: http_status:404
