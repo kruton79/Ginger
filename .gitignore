@@ -5,3 +5,4 @@ __pycache__/
 *.db-journal
 data.txt
 .env
+backups/
