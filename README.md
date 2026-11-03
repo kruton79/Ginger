@@ -52,9 +52,9 @@ curl -G http://127.0.0.1:5000/items --data-urlencode "exercise=Відтиска�
 ```
 curl http://127.0.0.1:5000/report
 ```
-5. Видалити запис за ID (наприклад, ID = 1):
+5. Видалити запис за ID (наприклад, ID = 1): #додав момент з адмінкою,бо тепер без неї запис не видалити
 ```
-curl -X DELETE http://127.0.0.1:5000/items/1
+curl -i -X DELETE -H "X-Admin-Token: ВАШ_ТОКЕН" http://127.0.0.1:8000/admin/items/1
 ```
 
 ## Помилки
@@ -82,3 +82,42 @@ curl -i -X DELETE http://127.0.0.1:5000/items/abc
 ## Формат даних
 База `data.db` (SQLite, створюється поруч з кодом автоматично), таблиця `items`:
 `id, date, exercise, target_sets, sets, reps, note`
+
+## Безпека
+
+### Секрети
+Токен адміністратора лежить у файлі `.env` у теці проєкту (у git його немає, він у `.gitignore`):
+
+```
+ADMIN_TOKEN=довгий_випадковий_рядок
+```
+
+Згенерувати: `python -c "import secrets; print(secrets.token_urlsafe(32))"`. Ключі тунелю (`cert.pem`, `UUID.json`) лежать лише в `.cloudflared` у домашній теці.
+
+### Адмінка
+Усі дії, що змінюють дані масово, винесено під `/admin/`. Захист трьома шарами: правило тунелю не пропускає `/admin/` з інтернету (`deploy/cloudflared.yml`); Flask відхиляє запити з заголовком `CF-Connecting-IP`, який додає Cloudflare; потрібен токен у заголовку `X-Admin-Token`. Статичний токен це навчальне спрощення, у лабораторній 12 його замінить вхід з ролями.
+
+Виклики з цього комп'ютера (або через Tailscale, замінивши адресу на `https://НАЗВА.ts.net`):
+
+```
+curl -H "X-Admin-Token: ТОКЕН" http://127.0.0.1:8000/admin/export
+curl -X DELETE -H "X-Admin-Token: ТОКЕН" http://127.0.0.1:8000/admin/items/1
+curl -X POST -H "X-Admin-Token: ТОКЕН" -H "Content-Type: application/json" -d @export.json http://127.0.0.1:8000/admin/import
+```
+
+### Резервні копії
+`python backup.py` зберігає копію бази в `backups/data-РРРР-ММ-ДД.db`. Скрипт запускається щодня о 20:00 через планувальник Windows (`schtasks`). Відновлення: підставити файл з `backups/` замість `data.db` при зупиненому сервері.
+
+### Аудит
+| Загроза | Як перевірено | Статус |
+| --- | --- | --- |
+| SQL-ін'єкція | POST з `exercise = '; DROP TABLE items; --`, потім GET /items (тест `test_sql_injection_is_just_text`) | Закрито: усі запити з параметрами `?` |
+| XSS у фронтенді | запис з `note = <img src=x onerror=alert(1)>` | Закрито: дані виводяться через `textContent` |
+| Сервер розробки в інтернеті | тунель дивиться на waitress, `python app.py` лише локально | Закрито: waitress, debug вимкнений за замовчуванням |
+| Доступ в обхід Cloudflare | `netstat -ano \| findstr :8000` | Закрито: порт лише на 127.0.0.1, публічної IP немає |
+| Флуд запитами | 60 запитів у циклі через `https://api.shylko.pp.ua` | Закрито: rate limiting у Cloudflare |
+| Адмінка з інтернету | `/admin/export` з телефона дає 404; з Tailscale без токена 403 | Закрито: правило тунелю, перевірка `CF-Connecting-IP`, токен |
+| Секрети в git | пошук токена та файлів `.env`, `cert.pem`, `UUID.json` в історії | Закрито: `.env` у `.gitignore`, ключі тунелю поза репозиторієм |
+| Втрата даних | відновлення з копії в `backups/` | Закрито: `backup.py` за розкладом, копію перевірено |
+| Вразливі бібліотеки | `pip-audit -r requirements.txt` | No known vulnerabilities found |
+
